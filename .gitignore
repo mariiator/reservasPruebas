@@ -1,0 +1,17 @@
+# Archivos de configuración local
+.env
+*.log
+*.tmp
+
+# Carpetas del sistema
+/vendor/
+/node_modules/
+/.idea/
+/.vscode/
+
+# Archivos temporales
+.DS_Store
+Thumbs.db
+
+# Archivos de XAMPP
+*.bak
