@@ -7,13 +7,15 @@
 require __DIR__ . '/config_local.php';
 
 // Si no hay sesión CAS, redirige a CAS
-//COMENTADO POR MARIAphpCAS::forceAuthentication();
+/*COMENTADO POR MARIA
+phpCAS::forceAuthentication();
 
 // Mitiga fijación de sesión tras autenticación
 if (empty($_SESSION['session_hardened'])) {
   session_regenerate_id(true);
   $_SESSION['session_hardened'] = true;
 }
+  */
 
 // Obtener todas las salas y su información
 $query = "SELECT id_espacio, nombre, color FROM espacios";

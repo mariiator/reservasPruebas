@@ -5,15 +5,12 @@ ini_set('display_errors', 1);
 //ini_set('display_startup_errors', 1);
 //error_reporting(E_ALL);
 
-//Puesto por MARIA
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-  }
 require __DIR__ . '/config.php';
 require __DIR__ . '/config_local.php';
 
 // Si no hay sesión CAS, redirige a CAS
-//COMENTADO POR MARIAphpCAS::forceAuthentication();
+/*COMENTADO POR MARIA
+phpCAS::forceAuthentication();
 
 // Mitiga fijación de sesión tras autenticación
 if (empty($_SESSION['session_hardened'])) {
@@ -22,20 +19,19 @@ if (empty($_SESSION['session_hardened'])) {
 }
 
 // Usuario autenticado
-/*COMENTADO POR MARIA
 $casuser      = phpCAS::getUser();        // normalmente el uid
 $attrs     = phpCAS::getAttributes();  // atributos extra (mail, displayName, etc.)
 */
 
+$usuario = $_SESSION['usuario'];
+
 //COMENTADO POR MARIA$usuario = phpCAS::getUser();
-// PARA PRUEBAS MARIA
-$usuario = 'usuario_local';
 
 // Verificar si el usuario ya esta en la base de datos y obtener rol y permisos
 $sql = "
-    SELECT usuarios.rol_id 
-    FROM usuarios
-    WHERE usuarios.nombre = '$usuario'";
+  SELECT usuarios.rol_id 
+  FROM usuarios
+  WHERE usuarios.nombre = '$usuario'";
 
 $stmt = $conn->prepare($sql);
 $stmt->execute();

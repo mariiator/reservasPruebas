@@ -1,6 +1,7 @@
 <?php
 header('Content-Type: application/json; charset=utf-8');
 
+require __DIR__ . '/config_local.php';
 // Configuración de conexión
 /*$servername = "pruebas.maristaschamberi.com";
 $username = "root";

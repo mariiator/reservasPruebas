@@ -3,17 +3,20 @@
 //ini_set('display_startup_errors', 1);
 //error_reporting(E_ALL);
 
-
 require __DIR__ . '/config_local.php';
 
 // Si no hay sesión CAS, redirige a CAS
-//COMENTADO POR MARIAphpCAS::forceAuthentication();
+/*COMENTADO POR MARIA
+phpCAS::forceAuthentication();
 
 // Mitiga fijación de sesión tras autenticación
 if (empty($_SESSION['session_hardened'])) {
   session_regenerate_id(true);
   $_SESSION['session_hardened'] = true;
 }
+*/
+
+$usuario = $_SESSION['usuario'];
 
 // Obtener el usuario autenticado con CAS
 //COMENTADO POR MARIA$usuario = phpCAS::getUser();

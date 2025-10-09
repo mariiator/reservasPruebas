@@ -7,16 +7,20 @@
 require __DIR__ . '/config_local.php';
 
 // Si no hay sesión CAS, redirige a CAS
-//COMENTADO POR MARIAphpCAS::forceAuthentication();
+/*COMENTADO POR MARIA
+phpCAS::forceAuthentication();
 
 // Mitiga fijación de sesión tras autenticación
 if (empty($_SESSION['session_hardened'])) {
   session_regenerate_id(true);
   $_SESSION['session_hardened'] = true;
 }
+*/
+
+$id_usuario_actual = $_SESSION['usuario'];
 
 // Obtener usuario autenticado y su información
-$id_usuario_actual = phpCAS::getUser();
+//COMENTADO POR MARIA$id_usuario_actual = phpCAS::getUser();
 $query_usuario = "SELECT id_usuario, rol_id FROM usuarios WHERE nombre = ?";
 $stmt_usuario = $conn->prepare($query_usuario);
 if (!$stmt_usuario) {
