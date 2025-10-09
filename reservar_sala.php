@@ -24,8 +24,8 @@ $usuario = $_SESSION['usuario'];
 // Obtener la lista de espacios
 $sqlEspacios = "SELECT nombre FROM espacios";
 $resultadoEspacios = $conn->query($sqlEspacios);
-
 $espacios = [];
+
 if ($resultadoEspacios->num_rows > 0) {
     while ($row = $resultadoEspacios->fetch_assoc()) {
         $espacios[] = $row; // Almacena los nombres de los espacios
@@ -196,8 +196,27 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 <?php endforeach; ?>
             </select>
 
-            <label for="fecha">Fecha:</label>
-            <input type="date" id="fecha" name="fecha" required>
+            <label for="fecha_inicio">Fecha Inicio:</label>
+            <input type="date" id="fecha_inicio" name="fecha_inicio" required>
+
+            <label>
+                <input type="checkbox" id="reserva_periodica" name="reserva_periodica">
+                Reserva periódica
+            </label>
+
+            <div id="opciones_periodicas" style="display:none;">
+                <label for="fecha_fin">Fecha Fin:</label>
+                <input type="date" id="fecha_fin" name="fecha_fin"><br><br>
+
+                <label>Días de la semana:</label><br>
+                <label><input type="checkbox" name="dias[]" value="1"> Lunes</label>
+                <label><input type="checkbox" name="dias[]" value="2"> Martes</label>
+                <label><input type="checkbox" name="dias[]" value="3"> Miércoles</label>
+                <label><input type="checkbox" name="dias[]" value="4"> Jueves</label>
+                <label><input type="checkbox" name="dias[]" value="5"> Viernes</label>
+                <label><input type="checkbox" name="dias[]" value="6"> Sábado</label>
+                <label><input type="checkbox" name="dias[]" value="7"> Domingo</label>
+            </div>
 
             <label for="hora_inicio">Hora de Inicio:</label>
             <input type="time" id="hora_inicio" name="hora_inicio" required>
@@ -205,11 +224,42 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             <label for="hora_fin">Hora de Fin:</label>
             <input type="time" id="hora_fin" name="hora_fin" required>
 
-            <label for="observaciones">Titulo:</label>
+            <label for="observaciones">Título:</label>
             <textarea id="observaciones" name="observaciones" required></textarea>
 
             <button type="submit">Reservar</button>
         </form>
     </div>
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const checkbox = document.getElementById('reserva_periodica');
+        const opciones = document.getElementById('opciones_periodicas');
+        const form = document.getElementById('formReserva');
+
+        // Mostrar/ocultar opciones periódicas
+        checkbox.addEventListener('change', function() {
+            opciones.style.display = this.checked ? 'block' : 'none';
+        });
+
+        // Validación al enviar
+        form.addEventListener('submit', function(e) {
+            if (checkbox.checked) {
+                const fechaFin = document.getElementById('fechafin').value;
+                const dias = document.querySelectorAll('#opciones_periodicas input[name="dias[]"]:checked');
+
+                if (!fechaFin) {
+                    e.preventDefault();
+                    alert('Debes seleccionar la fecha fin para una reserva periódica.');
+                    return;
+                }
+                if (dias.length === 0) {
+                    e.preventDefault();
+                    alert('Debes seleccionar al menos un día de la semana para una reserva periódica.');
+                    return;
+                }
+            }
+        });
+    });
+    </script>
 </body>
 </html>
