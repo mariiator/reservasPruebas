@@ -44,18 +44,38 @@ while ($row = $resultadoReservasOcupadas->fetch_assoc()) {
 
 // Procesar la reserva si se envía el formulario
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
-    if (isset($_POST['hora_inicio'], $_POST['lugar'], $_POST['observaciones'], $_POST['fecha'])) {
+    // Campos básicos obligatorios
+    $camposObligatorios = ['hora_inicio', 'hora_fin', 'lugar', 'observaciones', 'fecha_inicio'];
+    $faltanCampos = false;
+
+    foreach ($camposObligatorios as $campo) {
+        if (empty($_POST[$campo])) {
+            $faltanCampos = true;
+            break;
+        }
+    }
+
+    // Si es reserva periódica, verificar también fecha_fin y días
+    if (isset($_POST['reserva_periodica'])) {
+        if (empty($_POST['fecha_fin']) || empty($_POST['dias'])) {
+            $faltanCampos = true;
+        }
+    }
+
+    if (!$faltanCampos) {
+        // Aquí sigue todo tu código actual de inserción...
         $hora_inicio = $conn->real_escape_string($_POST['hora_inicio']);
+        $hora_fin = $conn->real_escape_string($_POST['hora_fin']);
         $lugar = $conn->real_escape_string($_POST['lugar']);
         $observaciones = $conn->real_escape_string($_POST['observaciones']);
-        $fecha_reserva = $conn->real_escape_string($_POST['fecha']);
+        $fecha_inicio = $conn->real_escape_string($_POST['fecha_inicio']);
         $fecha = date('Y-m-d');
         
         // La hora de fin ahora se toma del formulario
         $hora_fin = $conn->real_escape_string($_POST['hora_fin']);
 
         // Generar id_espacio combinando fecha, hora_inicio, hora_fin y lugar
-        $id_espacio = $fecha_reserva . '_' . $hora_inicio . '_' . $hora_fin . '_' . $lugar;
+        $id_espacio = $fecha_inicio . '_' . $hora_inicio . '_' . $hora_fin . '_' . $lugar;
 
         // Verificar si el usuario existe en la base de datos
         $sqlBuscarUsuario = "SELECT id_usuario FROM usuarios WHERE nombre = ?";
@@ -82,25 +102,106 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             }
         }
 
-        // Verificar si la franja horaria está ocupada
-        if (!in_array($id_espacio, $reservasOcupadasArray)) {
-            $sqlInsertarReserva = "INSERT INTO reservas (id_usuario, id_espacio, hora_inicio, hora_fin, fecha_reserva, lugar, observaciones, fecha) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
-            $stmtInsertarReserva = $conn->prepare($sqlInsertarReserva);
+        // Si es reserva periódica
+        if (isset($_POST['reserva_periodica'])) {
 
-            $stmtInsertarReserva->bind_param("isssssss", $id_usuario, $id_espacio, $hora_inicio, $hora_fin, $fecha_reserva, $lugar, $observaciones, $fecha);
+            $fecha_inicio = $conn->real_escape_string($_POST['fecha_inicio']);
+            $fecha_fin = $conn->real_escape_string($_POST['fecha_fin']);
+            $diasSeleccionados = $_POST['dias'] ?? [];
 
-            if ($stmtInsertarReserva->execute()) {
-                echo "<script>alert('Reserva creada con éxito.');</script>";
-                header("Location: reservar_sala.php");
+            if ($fechaInicio > $fechaFin) {
+                echo "<script>alert('La fecha de fin no puede ser anterior a la de inicio.');</script>";
                 exit();
-            } else {
-                echo "<script>alert('Error al crear la reserva.');</script>";
             }
 
+            $reservasInsertadas = 0;
+            $reservasOcupadas = [];
+
+            // Recorremos todas las fechas entre inicio y fin
+            while ($fechaInicio <= $fechaFin) {
+                $diaSemana = $fechaInicio->format('N'); // 1 = Lunes ... 7 = Domingo
+
+                if (in_array($diaSemana, $diasSeleccionados)) {
+                    $fechaActual = $fechaInicio->format('Y-m-d');
+
+                    // Generar id_espacio único
+                    $id_espacio = $fechaActual . '_' . $hora_inicio . '_' . $hora_fin . '_' . $lugar;
+
+                    // Comprobar si está ocupado
+                    $sqlCheck = "SELECT COUNT(*) AS total FROM reservas 
+                                WHERE lugar = ? AND fecha_inicio = ? 
+                                AND ((hora_inicio < ? AND hora_fin > ?) OR (hora_inicio < ? AND hora_fin > ?) OR (hora_inicio >= ? AND hora_fin <= ?))";
+                    $stmtCheck = $conn->prepare($sqlCheck);
+                    $stmtCheck->bind_param("ssssssss", 
+                        $lugar, $fechaActual, 
+                        $hora_fin, $hora_inicio, 
+                        $hora_inicio, $hora_fin,
+                        $hora_inicio, $hora_fin
+                    );
+                    $stmtCheck->execute();
+                    $resCheck = $stmtCheck->get_result()->fetch_assoc();
+
+                    if ($resCheck['total'] == 0) {
+                        // Insertar reserva
+                        $sqlInsert = "INSERT INTO reservas 
+                            (id_usuario, id_espacio, fecha_inicio, hora_inicio, hora_fin, lugar, observaciones, fecha_inicio)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, CURDATE())";
+                        $stmtInsert = $conn->prepare($sqlInsert);
+                        $stmtInsert->bind_param("issssss", $id_usuario, $id_espacio, $fechaActual, $hora_inicio, $hora_fin, $lugar, $observaciones);
+                        $stmtInsert->execute();
+                        $reservasInsertadas++;
+                    } else {
+                        $reservasOcupadas[] = $fechaActual;
+                    }
+                }
+
+                $fechaInicio->modify('+1 day');
+            }
+
+            // Mensajes resumen
+            if ($reservasInsertadas > 0) {
+                $msg = "Se han creado $reservasInsertadas reservas periódicas.";
+                if (!empty($reservasOcupadas)) {
+                    $msg .= " Las siguientes fechas estaban ocupadas: " . implode(', ', $reservasOcupadas);
+                }
+                echo "<script>alert('$msg'); window.location='reservar_sala.php';</script>";
+            } else {
+                echo "<script>alert('No se pudo crear ninguna reserva. Todas las fechas estaban ocupadas.');</script>";
+            }
+
+        // Si es reserva simple (NO periódica)
         } else {
-            echo "<script>alert('La franja horaria ya está ocupada.');</script>";
+
+            $id_espacio = $fecha_inicio . '_' . $hora_inicio . '_' . $hora_fin . '_' . $lugar;
+
+            // Comprobar si está ocupado
+            $sqlCheck = "SELECT COUNT(*) AS total FROM reservas 
+                        WHERE lugar = ? AND fecha_inicio = ? 
+                        AND ((hora_inicio < ? AND hora_fin > ?) OR (hora_inicio < ? AND hora_fin > ?) OR (hora_inicio >= ? AND hora_fin <= ?))";
+            $stmtCheck = $conn->prepare($sqlCheck);
+            $stmtCheck->bind_param("ssssssss", 
+                $lugar, $fecha_inicio, 
+                $hora_fin, $hora_inicio, 
+                $hora_inicio, $hora_fin,
+                $hora_inicio, $hora_fin
+            );
+            $stmtCheck->execute();
+            $resCheck = $stmtCheck->get_result()->fetch_assoc();
+
+            if ($resCheck['total'] == 0) {
+                $sqlInsertarReserva = "INSERT INTO reservas 
+                    (id_usuario, id_espacio, fecha_inicio, hora_inicio, hora_fin, lugar, observaciones, fecha_inicio)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, CURDATE())";
+                $stmtInsertarReserva = $conn->prepare($sqlInsertarReserva);
+                $stmtInsertarReserva->bind_param("issssss", $id_usuario, $id_espacio, $fecha_inicio, $hora_inicio, $hora_fin, $lugar, $observaciones);
+                $stmtInsertarReserva->execute();
+
+                echo "<script>alert('Reserva creada con éxito.'); window.location='reservar_sala.php';</script>";
+            } else {
+                echo "<script>alert('La franja horaria ya está ocupada en esta sala.');</script>";
+            }
         }
+
     } else {
         echo "<script>alert('Por favor, completa todos los campos.');</script>";
     }
@@ -187,7 +288,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 <a href="index.php" class="btn-ir-al-inicio">Ir al Inicio</a>
     <div class="container">
         <h1>Reserva de Espacios</h1>
-        <form method="POST">
+        <form method="POST" id="formReserva">
             <label for="lugar">Seleccionar Espacio a Reservar:</label>
             <select id="lugar" name="lugar" required>
                 <option value="">-- Selecciona un espacio --</option>
@@ -244,7 +345,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         // Validación al enviar
         form.addEventListener('submit', function(e) {
             if (checkbox.checked) {
-                const fechaFin = document.getElementById('fechafin').value;
+                const fechaFin = document.getElementById('fecha_fin').value;
                 const dias = document.querySelectorAll('#opciones_periodicas input[name="dias[]"]:checked');
 
                 if (!fechaFin) {
