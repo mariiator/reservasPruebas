@@ -141,6 +141,7 @@ CREATE TABLE `reservas` (
   `id_usuario` int(11) NOT NULL,
   `id_espacio` varchar(255) DEFAULT NULL,
   `fecha_inicio` date NOT NULL,
+  `fecha_fin` date DEFAULT NULL,
   `hora_inicio` time NOT NULL,
   `hora_fin` time NOT NULL,
   `estado` enum('confirmado','pendiente','cancelada') DEFAULT 'pendiente',
