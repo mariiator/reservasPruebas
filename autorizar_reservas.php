@@ -45,7 +45,8 @@ $query_reservas = "";
 if ($rol_id == 1) {
     // Admin: puede autorizar todas las reservas pendientes
     $query_reservas = "
-        SELECT r.fecha_reserva, r.hora_inicio, r.hora_fin, r.lugar, r.id_usuario, u.nombre, r.estado, e.id_espacio AS esp_numero
+        SELECT r.fecha_reserva, r.fecha_inicio, r.fecha_fin, r.hora_inicio, r.hora_fin, r.lugar, 
+           r.id_usuario, u.nombre, r.estado, e.id_espacio AS esp_numero, r.observaciones
         FROM reservas r
         INNER JOIN usuarios u ON r.id_usuario = u.id_usuario
         INNER JOIN espacios e ON r.lugar = e.nombre
@@ -75,7 +76,8 @@ if ($rol_id == 1) {
         $espacios_nombres = implode("','", $espacios_permitidos);
 
         $query_reservas = "
-            SELECT r.fecha_reserva, r.hora_inicio, r.hora_fin, r.lugar, r.id_usuario, u.nombre, r.estado, e.id_espacio AS esp_numero, r.observaciones
+            SELECT r.fecha_reserva, r.fecha_inicio, r.fecha_fin, r.hora_inicio, r.hora_fin, r.lugar, 
+                r.id_usuario, u.nombre, r.estado, e.id_espacio AS esp_numero, r.observaciones
             FROM reservas r
             INNER JOIN usuarios u ON r.id_usuario = u.id_usuario
             INNER JOIN espacios e ON r.lugar = e.nombre
@@ -112,12 +114,21 @@ if (isset($_GET['id']) && isset($_GET['accion']) && isset($_GET['fecha_reserva']
     $result_permiso = $stmt_permiso->get_result();
 
     if ($rol_id == 1 || $result_permiso->num_rows > 0) {
-        // Permitir la acción
-        $update_query = ($accion == 'autorizar') 
-            ? "UPDATE reservas SET estado = 'confirmado' WHERE fecha_reserva = ? AND hora_inicio = ? AND hora_fin = ? AND lugar = ?"
-            : "UPDATE reservas SET estado = 'cancelada' WHERE fecha_reserva = ? AND hora_inicio = ? AND hora_fin = ? AND lugar = ?";
-        $stmt_update = $conn->prepare($update_query);
-        $stmt_update->bind_param("ssss", $fecha_reserva, $hora_inicio, $hora_fin, $lugar);
+        // Si hay fecha_fin_periodica, autoriza el rango completo
+        $fecha_fin = $_GET['fecha_fin'] ?? null;
+        if ($fecha_fin) {
+            $update_query = ($accion == 'autorizar') 
+                ? "UPDATE reservas SET estado = 'confirmado' WHERE lugar = ? AND fecha_reserva BETWEEN ? AND ? AND hora_inicio = ? AND hora_fin = ?"
+                : "UPDATE reservas SET estado = 'cancelada' WHERE lugar = ? AND fecha_reserva BETWEEN ? AND ? AND hora_inicio = ? AND hora_fin = ?";
+            $stmt_update = $conn->prepare($update_query);
+            $stmt_update->bind_param("sssss", $lugar, $fecha_reserva, $fecha_fin, $hora_inicio, $hora_fin);
+        } else {
+            $update_query = ($accion == 'autorizar') 
+                ? "UPDATE reservas SET estado = 'confirmado' WHERE fecha_reserva = ? AND hora_inicio = ? AND hora_fin = ? AND lugar = ?"
+                : "UPDATE reservas SET estado = 'cancelada' WHERE fecha_reserva = ? AND hora_inicio = ? AND hora_fin = ? AND lugar = ?";
+            $stmt_update = $conn->prepare($update_query);
+            $stmt_update->bind_param("ssss", $fecha_reserva, $hora_inicio, $hora_fin, $lugar);
+        }
         $stmt_update->execute();
     } else {
         echo "No tienes permiso para autorizar reservas.";
@@ -244,17 +255,31 @@ if (isset($_GET['id']) && isset($_GET['accion']) && isset($_GET['fecha_reserva']
                     </tr>
                 </thead>
                 <tbody>
-                <?php while ($row = mysqli_fetch_assoc($result)): ?>
+                    <?php
+                    $reservas_mostradas = []; // Para evitar filas repetidas de reservas periódicas
+                    while ($row = mysqli_fetch_assoc($result)):
+                        // Si existe fecha_fin y distinta de fecha_reserva, es periódica
+                        $es_periodica = isset($row['fecha_fin']) && $row['fecha_fin'] != $row['fecha_reserva'];
+                        $key = $es_periodica 
+                            ? $row['id_usuario'].'-'.$row['lugar'].'-'.$row['hora_inicio'].'-'.$row['hora_fin'].'-'.$row['fecha_reserva'].'-'.$row['fecha_fin']
+                            : $row['esp_numero'].'-'.$row['fecha_reserva'].'-'.$row['hora_inicio'];
+
+                        if (isset($reservas_mostradas[$key])) continue;
+                            $reservas_mostradas[$key] = true;
+
+                        $fecha_mostrar = $es_periodica ? $row['fecha_reserva'].' - '.$row['fecha_fin'] : $row['fecha_reserva'];
+                        $fecha_fin_param = $es_periodica ? $row['fecha_fin'] : $row['fecha_reserva'];
+                    ?>
                     <tr>
                         <td><?php echo htmlspecialchars($row['nombre']); ?></td>
                         <td><?php echo htmlspecialchars($row['lugar']); ?></td>
-                        <td><?php echo htmlspecialchars($row['fecha_reserva']); ?></td>
-                        <td><?php echo htmlspecialchars($row['hora_inicio'] . ' - ' . $row['hora_fin']); ?></td>
+                        <td><?php echo $fecha_mostrar; ?></td>
+                        <td><?php echo htmlspecialchars($row['hora_inicio'].' - '.$row['hora_fin']); ?></td>
                         <td>
-                        <a href="autorizar_reservas.php?id=<?php echo $row['esp_numero']; ?>&fecha_reserva=<?php echo $row['fecha_reserva']; ?>&hora_inicio=<?php echo $row['hora_inicio']; ?>&hora_fin=<?php echo $row['hora_fin']; ?>&lugar=<?php echo $row['lugar']; ?>&accion=autorizar" class="btn btn-success">Autorizar</a>
-                        <a href="autorizar_reservas.php?id=<?php echo $row['esp_numero']; ?>&fecha_reserva=<?php echo $row['fecha_reserva']; ?>&hora_inicio=<?php echo $row['hora_inicio']; ?>&hora_fin=<?php echo $row['hora_fin']; ?>&lugar=<?php echo $row['lugar']; ?>&accion=rechazar" class="btn btn-danger">Rechazar</a>
-
-                    </tr>
+                            <a href="autorizar_reservas.php?id=<?php echo $row['esp_numero']; ?>&fecha_reserva=<?php echo $row['fecha_reserva']; ?>&fecha_fin=<?php echo $fecha_fin_param; ?>&hora_inicio=<?php echo $row['hora_inicio']; ?>&hora_fin=<?php echo $row['hora_fin']; ?>&lugar=<?php echo $row['lugar']; ?>&accion=autorizar" class="btn btn-success">Autorizar</a>
+                            <a href="autorizar_reservas.php?id=<?php echo $row['esp_numero']; ?>&fecha_reserva=<?php echo $row['fecha_reserva']; ?>&fecha_fin=<?php echo $fecha_fin_param; ?>&hora_inicio=<?php echo $row['hora_inicio']; ?>&hora_fin=<?php echo $row['hora_fin']; ?>&lugar=<?php echo $row['lugar']; ?>&accion=rechazar" class="btn btn-danger">Rechazar</a>
+                        </td>
+                </tr>
                 <?php endwhile; ?>
                 </tbody>
             </table>
