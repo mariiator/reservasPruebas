@@ -1171,8 +1171,7 @@ INSERT INTO `usuarios` VALUES
 (48,'gabriel.carbajo','2025-09-07 16:09:55',3),
 (49,'gerardo.franco','2025-09-09 08:04:03',3),
 (50,'sonsoles.martin','2025-09-25 13:28:05',3),
-(51,'maria.torres.vivas','2025-10-02 11:07:18',3),
-(52, 'admin1@example.com','2025-10-15 16:26:10',1);
+(51,'admin1@example.com','2025-10-02 11:07:18',1);
 /*!40000 ALTER TABLE `usuarios` ENABLE KEYS */;
 UNLOCK TABLES;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
@@ -1186,10 +1185,3 @@ UNLOCK TABLES;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
 -- Dump completed on 2025-10-08  9:41:42
-
-ALTER TABLE `reservas`
-CHANGE COLUMN `fecha` `fecha_inicio` DATE NOT NULL;
-
--- Añadir la columna `fecha_fin` para reservas periódicas, NULL por defecto
-ALTER TABLE `reservas`
-ADD COLUMN `fecha_fin` DATE DEFAULT NULL AFTER `fecha_inicio`;

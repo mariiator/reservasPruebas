@@ -45,8 +45,7 @@ $query_reservas = "";
 if ($rol_id == 1) {
     // Admin: puede autorizar todas las reservas pendientes
     $query_reservas = "
-        SELECT r.fecha_reserva, r.fecha_inicio, r.fecha_fin, r.hora_inicio, r.hora_fin, r.lugar, 
-           r.id_usuario, u.nombre, r.estado, e.id_espacio AS esp_numero, r.observaciones
+        SELECT r.fecha, r.hora_inicio, r.hora_fin, r.lugar, r.id_usuario, u.nombre, r.estado, e.id_espacio AS esp_numero
         FROM reservas r
         INNER JOIN usuarios u ON r.id_usuario = u.id_usuario
         INNER JOIN espacios e ON r.lugar = e.nombre
@@ -76,8 +75,7 @@ if ($rol_id == 1) {
         $espacios_nombres = implode("','", $espacios_permitidos);
 
         $query_reservas = "
-            SELECT r.fecha_reserva, r.fecha_inicio, r.fecha_fin, r.hora_inicio, r.hora_fin, r.lugar, 
-                r.id_usuario, u.nombre, r.estado, e.id_espacio AS esp_numero, r.observaciones
+            SELECT r.fecha, r.hora_inicio, r.hora_fin, r.lugar, r.id_usuario, u.nombre, r.estado, e.id_espacio AS esp_numero, r.observaciones
             FROM reservas r
             INNER JOIN usuarios u ON r.id_usuario = u.id_usuario
             INNER JOIN espacios e ON r.lugar = e.nombre
@@ -99,8 +97,9 @@ if (!$result) {
 }
 
 // Comprobar si el usuario tiene permiso para autorizar en el espacio
-if (isset($_GET['id']) && isset($_GET['accion']) && isset($_GET['fecha_reserva']) && isset($_GET['hora_inicio']) && isset($_GET['hora_fin']) && isset($_GET['lugar'])) {
-    $fecha_reserva = $_GET['fecha_reserva'];
+if (isset($_GET['id']) && isset($_GET['accion']) && isset($_GET['fecha_inicio']) && isset($_GET['hora_inicio']) && isset($_GET['hora_fin']) && isset($_GET['lugar'])) {
+    $fecha_inicio = $_GET['fecha_inicio'];
+    $fecha_fin = $_GET['fecha_fin'] ?? null;
     $hora_inicio = $_GET['hora_inicio'];
     $hora_fin = $_GET['hora_fin'];
     $lugar = $_GET['lugar'];
@@ -114,21 +113,24 @@ if (isset($_GET['id']) && isset($_GET['accion']) && isset($_GET['fecha_reserva']
     $result_permiso = $stmt_permiso->get_result();
 
     if ($rol_id == 1 || $result_permiso->num_rows > 0) {
-        // Si hay fecha_fin_periodica, autoriza el rango completo
-        $fecha_fin = $_GET['fecha_fin'] ?? null;
-        if ($fecha_fin) {
-            $update_query = ($accion == 'autorizar') 
-                ? "UPDATE reservas SET estado = 'confirmado' WHERE lugar = ? AND fecha_reserva BETWEEN ? AND ? AND hora_inicio = ? AND hora_fin = ?"
-                : "UPDATE reservas SET estado = 'cancelada' WHERE lugar = ? AND fecha_reserva BETWEEN ? AND ? AND hora_inicio = ? AND hora_fin = ?";
+        if (!empty($fecha_fin)) {
+            // Reserva periódica: actualizamos todas las fechas entre inicio y fin
+            $update_query = ($accion == 'autorizar')
+                ? "UPDATE reservas SET estado = 'confirmado' WHERE lugar = ? AND fecha >= ? AND fecha <= ? AND hora_inicio = ? AND hora_fin = ?"
+                : "UPDATE reservas SET estado = 'cancelada' WHERE lugar = ? AND fecha >= ? AND fecha <= ? AND hora_inicio = ? AND hora_fin = ?";
+
             $stmt_update = $conn->prepare($update_query);
-            $stmt_update->bind_param("sssss", $lugar, $fecha_reserva, $fecha_fin, $hora_inicio, $hora_fin);
+            $stmt_update->bind_param("sssss", $lugar, $fecha_inicio, $fecha_fin, $hora_inicio, $hora_fin);
         } else {
-            $update_query = ($accion == 'autorizar') 
-                ? "UPDATE reservas SET estado = 'confirmado' WHERE fecha_reserva = ? AND hora_inicio = ? AND hora_fin = ? AND lugar = ?"
-                : "UPDATE reservas SET estado = 'cancelada' WHERE fecha_reserva = ? AND hora_inicio = ? AND hora_fin = ? AND lugar = ?";
+            // Reserva normal: solo esa fecha
+            $update_query = ($accion == 'autorizar')
+                ? "UPDATE reservas SET estado = 'confirmado' WHERE fecha = ? AND hora_inicio = ? AND hora_fin = ? AND lugar = ?"
+                : "UPDATE reservas SET estado = 'cancelada' WHERE fecha = ? AND hora_inicio = ? AND hora_fin = ? AND lugar = ?";
+
             $stmt_update = $conn->prepare($update_query);
-            $stmt_update->bind_param("ssss", $fecha_reserva, $hora_inicio, $hora_fin, $lugar);
+            $stmt_update->bind_param("ssss", $fecha_inicio, $hora_inicio, $hora_fin, $lugar);
         }
+
         $stmt_update->execute();
     } else {
         echo "No tienes permiso para autorizar reservas.";
@@ -178,7 +180,7 @@ if (isset($_GET['id']) && isset($_GET['accion']) && isset($_GET['fecha_reserva']
 
         th, td {
             border: 1px solid #ddd;
-            padding: 10px;
+            padding: 9px;
             text-align: center;
         }
 
@@ -256,31 +258,54 @@ if (isset($_GET['id']) && isset($_GET['accion']) && isset($_GET['fecha_reserva']
                 </thead>
                 <tbody>
                     <?php
-                    $reservas_mostradas = []; // Para evitar filas repetidas de reservas periódicas
-                    while ($row = mysqli_fetch_assoc($result)):
-                        // Si existe fecha_fin y distinta de fecha_reserva, es periódica
-                        $es_periodica = isset($row['fecha_fin']) && $row['fecha_fin'] != $row['fecha_reserva'];
-                        $key = $es_periodica 
-                            ? $row['id_usuario'].'-'.$row['lugar'].'-'.$row['hora_inicio'].'-'.$row['hora_fin'].'-'.$row['fecha_reserva'].'-'.$row['fecha_fin']
-                            : $row['esp_numero'].'-'.$row['fecha_reserva'].'-'.$row['hora_inicio'];
+                    $reservas_agregadas = [];
 
-                        if (isset($reservas_mostradas[$key])) continue;
-                            $reservas_mostradas[$key] = true;
+                    // Recorrer todas las reservas pendientes
+                    while ($reserva = mysqli_fetch_assoc($result)) {
+                        // Generamos una clave para agrupar reservas del mismo lugar, hora y observaciones
+                        $grupo_key = ($reserva['lugar'] ?? '') . '_' . ($reserva['hora_inicio'] ?? '') . '_' . ($reserva['hora_fin'] ?? '') . '_' . ($reserva['observaciones'] ?? '');
 
-                        $fecha_mostrar = $es_periodica ? $row['fecha_reserva'].' - '.$row['fecha_fin'] : $row['fecha_reserva'];
-                        $fecha_fin_param = $es_periodica ? $row['fecha_fin'] : $row['fecha_reserva'];
+                        if (!isset($reservas_agregadas[$grupo_key])) {
+                            // Primera vez que encontramos este grupo: inicializamos
+                            $reservas_agregadas[$grupo_key] = [
+                                'nombre' => $reserva['nombre'] ?? '',
+                                'lugar' => $reserva['lugar'] ?? '',
+                                'hora_inicio' => $reserva['hora_inicio'] ?? '',
+                                'hora_fin' => $reserva['hora_fin'] ?? '',
+                                'observaciones' => $reserva['observaciones'] ?? '',
+                                'fecha_inicio' => $reserva['fecha'] ?? '',
+                                'fecha_fin' => null,
+                                'esp_numero' => $reserva['esp_numero'] ?? ''
+                            ];
+                        } else {
+                            // Actualizamos fecha_fin solo si hay varias fechas
+                            if (!empty($reserva['fecha']) && $reserva['fecha'] > $reservas_agregadas[$grupo_key]['fecha_inicio']) {
+                                $reservas_agregadas[$grupo_key]['fecha_fin'] = $reserva['fecha'];
+                            }
+                        }
+                    }
+
+                    // Mostrar tabla
+                    foreach ($reservas_agregadas as $reserva):
+                        $fecha_inicio = $reserva['fecha_inicio'];
+                        $fecha_fin = $reserva['fecha_fin'];
+                        $fecha_mostrar = $fecha_inicio;
+
+                        if (!empty($fecha_fin)) {
+                            $fecha_mostrar .= " - " . $fecha_fin;
+                        }
                     ?>
                     <tr>
-                        <td><?php echo htmlspecialchars($row['nombre']); ?></td>
-                        <td><?php echo htmlspecialchars($row['lugar']); ?></td>
-                        <td><?php echo $fecha_mostrar; ?></td>
-                        <td><?php echo htmlspecialchars($row['hora_inicio'].' - '.$row['hora_fin']); ?></td>
+                        <td><?php echo htmlspecialchars($reserva['nombre']); ?></td>
+                        <td><?php echo htmlspecialchars($reserva['lugar']); ?></td>
+                        <td><?php echo htmlspecialchars($fecha_mostrar); ?></td>
+                        <td><?php echo htmlspecialchars($reserva['hora_inicio'].' - '.$reserva['hora_fin']); ?></td>
                         <td>
-                            <a href="autorizar_reservas.php?id=<?php echo $row['esp_numero']; ?>&fecha_reserva=<?php echo $row['fecha_reserva']; ?>&fecha_fin=<?php echo $fecha_fin_param; ?>&hora_inicio=<?php echo $row['hora_inicio']; ?>&hora_fin=<?php echo $row['hora_fin']; ?>&lugar=<?php echo $row['lugar']; ?>&accion=autorizar" class="btn btn-success">Autorizar</a>
-                            <a href="autorizar_reservas.php?id=<?php echo $row['esp_numero']; ?>&fecha_reserva=<?php echo $row['fecha_reserva']; ?>&fecha_fin=<?php echo $fecha_fin_param; ?>&hora_inicio=<?php echo $row['hora_inicio']; ?>&hora_fin=<?php echo $row['hora_fin']; ?>&lugar=<?php echo $row['lugar']; ?>&accion=rechazar" class="btn btn-danger">Rechazar</a>
+                            <a href="autorizar_reservas.php?id=<?php echo $reserva['esp_numero']; ?>&fecha_inicio=<?php echo $reserva['fecha_inicio']; ?>&fecha_fin=<?php echo $reserva['fecha_fin']; ?>&hora_inicio=<?php echo $reserva['hora_inicio']; ?>&hora_fin=<?php echo $reserva['hora_fin']; ?>&lugar=<?php echo $reserva['lugar']; ?>&accion=autorizar" class="btn btn-success">Autorizar</a>
+                            <a href="autorizar_reservas.php?id=<?php echo $reserva['esp_numero']; ?>&fecha_inicio=<?php echo $reserva['fecha_inicio']; ?>&fecha_fin=<?php echo $reserva['fecha_fin']; ?>&hora_inicio=<?php echo $reserva['hora_inicio']; ?>&hora_fin=<?php echo $reserva['hora_fin']; ?>&lugar=<?php echo $reserva['lugar']; ?>&accion=rechazar" class="btn btn-danger">Rechazar</a>
                         </td>
-                </tr>
-                <?php endwhile; ?>
+                    </tr>
+                    <?php endforeach; ?>
                 </tbody>
             </table>
         <?php else: ?>
