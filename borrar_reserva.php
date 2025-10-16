@@ -40,89 +40,127 @@ $rol_id = $usuario['rol_id'];
 $mensaje = '';
 
 // Procesar la solicitud de eliminación
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['esp_numero'], $_POST['lugar'])) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['esp_numero'])) {
     $esp_numero = $_POST['esp_numero'];
-    $lugar = $_POST['lugar'];
 
-    $query_permiso_borrar = "
-        SELECT p.id_espacio
-        FROM permisos_espacios p
-        INNER JOIN espacios e ON p.id_espacio = e.id_espacio
-        WHERE e.nombre = ? AND p.id_usuario = ? AND p.puede_borrar = 1
-    ";
-    $stmt_permiso = $conn->prepare($query_permiso_borrar);
-    $stmt_permiso->bind_param("si", $lugar, $id_usuario);
-    $stmt_permiso->execute();
-    $result_permiso = $stmt_permiso->get_result();
+    // Obtener id_espacio de la reserva
+    $stmt_reserva = $conn->prepare("SELECT id_espacio FROM reservas WHERE esp_numero = ?");
+    $stmt_reserva->bind_param("i", $esp_numero);
+    $stmt_reserva->execute();
+    $result_reserva = $stmt_reserva->get_result();
 
-    if ($result_permiso->num_rows > 0) {
-        $query_delete = "DELETE FROM reservas WHERE esp_numero = ?";
-        $stmt_delete = $conn->prepare($query_delete);
-        $stmt_delete->bind_param("i", $esp_numero);
-        $stmt_delete->execute();
-        $mensaje = $stmt_delete->affected_rows > 0 ? "Reserva eliminada correctamente." : "No se pudo eliminar la reserva.";
+    if ($result_reserva->num_rows === 0) {
+        $mensaje = "La reserva no existe.";
     } else {
-        $mensaje = "No tienes permisos para eliminar esta reserva.";
+        $reserva = $result_reserva->fetch_assoc();
+        $id_espacio = $reserva['id_espacio'];
+
+        // Verificar permisos del usuario
+        $stmt_permiso = $conn->prepare("
+            SELECT 1 FROM permisos_espacios
+            WHERE id_usuario = ? AND id_espacio = ? AND puede_borrar = 1
+        ");
+        $stmt_permiso->bind_param("ii", $id_usuario, $id_espacio);
+        $stmt_permiso->execute();
+        $result_permiso = $stmt_permiso->get_result();
+
+        if ($rol_id == 1 || $result_permiso->num_rows > 0) {
+            $stmt_delete = $conn->prepare("DELETE FROM reservas WHERE esp_numero = ?");
+            $stmt_delete->bind_param("i", $esp_numero);
+            $stmt_delete->execute();
+            $mensaje = $stmt_delete->affected_rows > 0 ? "Reserva eliminada correctamente." : "No se pudo eliminar la reserva.";
+        } else {
+            $mensaje = "No tienes permisos para eliminar esta reserva.";
+        }
     }
 }
 
-// Mostrar las reservas según los permisos del usuario
-if ($rol_id == 1) {
-    $query_reservas = "
-        SELECT r.esp_numero, r.fecha_reserva, r.hora_inicio, r.hora_fin, r.observaciones, r.lugar
-        FROM reservas r
-        ORDER BY r.fecha_reserva, r.hora_inicio
-    ";
-} else {
-    // Verificar permisos para espacios específicos
-    $query_permisos = "SELECT e.nombre FROM permisos_espacios p
-                       INNER JOIN espacios e ON p.id_espacio = e.id_espacio
-                       WHERE p.id_usuario = ? AND p.puede_borrar = 1";
-    $stmt_permisos = $conn->prepare($query_permisos);
+// Obtener espacios permitidos
+$espacios_permitidos = [];
+if ($rol_id != 1) {
+    $stmt_permisos = $conn->prepare("
+        SELECT id_espacio FROM permisos_espacios WHERE id_usuario = ? AND puede_borrar = 1
+    ");
     $stmt_permisos->bind_param("i", $id_usuario);
     $stmt_permisos->execute();
     $result_permisos = $stmt_permisos->get_result();
-
-    // Si no hay permisos, no hay que mostrar reservas
-    if ($result_permisos->num_rows == 0) {
-        $query_reservas = "";
-    } else {
-        $espacios_permitidos = [];
-        while ($permiso = $result_permisos->fetch_assoc()) {
-            $espacios_permitidos[] = $permiso['nombre'];
-        }
-
-        $espacios_nombres = implode("','", $espacios_permitidos);
-        $query_reservas = "
-            SELECT r.esp_numero, r.fecha_reserva, r.hora_inicio, r.hora_fin, r.observaciones, r.lugar
-            FROM reservas r
-            WHERE r.lugar IN ('$espacios_nombres')
-        ";
-
-        // Agregar filtros de lugar y fecha si están definidos
-        if (!empty($_GET['lugar'])) {
-            $query_reservas .= " AND r.lugar = '" . $conn->real_escape_string($_GET['lugar']) . "'";
-        }
-        if (!empty($_GET['fecha'])) {
-            $query_reservas .= " AND r.fecha_reserva = '" . $conn->real_escape_string($_GET['fecha']) . "'";
-        }
-
-        $query_reservas .= " ORDER BY r.fecha_reserva, r.hora_inicio";
+    while ($permiso = $result_permisos->fetch_assoc()) {
+        $espacios_permitidos[] = $permiso['id_espacio'];
     }
 }
 
-$reservas = $query_reservas ? $conn->query($query_reservas) : [];
+// Filtros de lugar y fecha
+$condiciones = [];
+$params = [];
+$types = '';
+
+if ($rol_id != 1 && empty($espacios_permitidos)) {
+    // Sin permisos, no muestra reservas
+    $reservas = [];
+} else {
+    // Filtro por lugar
+    if (!empty($_GET['lugar'])) {
+        $stmt_lugar = $conn->prepare("SELECT id_espacio FROM espacios WHERE nombre = ?");
+        $stmt_lugar->bind_param("s", $_GET['lugar']);
+        $stmt_lugar->execute();
+        $result_lugar = $stmt_lugar->get_result();
+        if ($result_lugar->num_rows > 0) {
+            $esp = $result_lugar->fetch_assoc();
+            $condiciones[] = "id_espacio = ?";
+            $params[] = $esp['id_espacio'];
+            $types .= 'i';
+        } else {
+            // Lugar no válido, no muestra nada
+            $reservas = [];
+        }
+    }
+
+    // Filtro por fecha
+    if (!empty($_GET['fecha'])) {
+        $condiciones[] = "fecha_reserva = ?";
+        $params[] = $_GET['fecha'];
+        $types .= 's';
+    }
+
+    // Filtrar según permisos (solo usuarios no admin)
+    if ($rol_id != 1 && !empty($espacios_permitidos)) {
+        $placeholders = implode(',', array_fill(0, count($espacios_permitidos), '?'));
+        $condiciones[] = "id_espacio IN ($placeholders)";
+        foreach ($espacios_permitidos as $id) {
+            $params[] = $id;
+            $types .= 'i';
+        }
+    }
+
+    $sql = "SELECT * FROM reservas";
+    if (!empty($condiciones)) {
+        $sql .= " WHERE " . implode(" AND ", $condiciones);
+    }
+    $sql .= " ORDER BY fecha_reserva, hora_inicio";
+
+    $stmt_reservas = $conn->prepare($sql);
+    if (!empty($params)) {
+        $stmt_reservas->bind_param($types, ...$params);
+    }
+    $stmt_reservas->execute();
+    $reservas = $stmt_reservas->get_result();
+}
 
 // Obtener lugares disponibles para el filtro
 $lugares_disponibles = [];
 if ($rol_id == 1) {
-    $query_lugares = "SELECT DISTINCT lugar FROM reservas";
-    $result_lugares = $conn->query($query_lugares);
-    while ($lugar = $result_lugares->fetch_assoc()) {
-        $lugares_disponibles[] = $lugar['lugar'];
+    $result_lugares = $conn->query("SELECT DISTINCT lugar FROM reservas");
+    while ($l = $result_lugares->fetch_assoc()) {
+        $lugares_disponibles[] = $l['lugar'];
     }
 } else {
-    $lugares_disponibles = $espacios_permitidos;
+    if (!empty($espacios_permitidos)) {
+        $ids = implode(',', $espacios_permitidos);
+        $result_lugares = $conn->query("SELECT nombre FROM espacios WHERE id_espacio IN ($ids)");
+        while ($l = $result_lugares->fetch_assoc()) {
+            $lugares_disponibles[] = $l['nombre'];
+        }
+    }
 }
 ?>
 
