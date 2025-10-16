@@ -45,7 +45,7 @@ $query_reservas = "";
 if ($rol_id == 1) {
     // Admin: puede autorizar todas las reservas pendientes
     $query_reservas = "
-        SELECT r.fecha, r.hora_inicio, r.hora_fin, r.lugar, r.id_usuario, u.nombre, r.estado, e.id_espacio AS esp_numero
+        SELECT r.fecha_reserva, r.hora_inicio, r.hora_fin, r.lugar, r.id_usuario, u.nombre, r.estado, e.id_espacio AS esp_numero
         FROM reservas r
         INNER JOIN usuarios u ON r.id_usuario = u.id_usuario
         INNER JOIN espacios e ON r.lugar = e.nombre
@@ -75,7 +75,7 @@ if ($rol_id == 1) {
         $espacios_nombres = implode("','", $espacios_permitidos);
 
         $query_reservas = "
-            SELECT r.fecha, r.hora_inicio, r.hora_fin, r.lugar, r.id_usuario, u.nombre, r.estado, e.id_espacio AS esp_numero, r.observaciones
+            SELECT r.fecha_reserva, r.hora_inicio, r.hora_fin, r.lugar, r.id_usuario, u.nombre, r.estado, e.id_espacio AS esp_numero, r.observaciones
             FROM reservas r
             INNER JOIN usuarios u ON r.id_usuario = u.id_usuario
             INNER JOIN espacios e ON r.lugar = e.nombre
@@ -116,16 +116,16 @@ if (isset($_GET['id']) && isset($_GET['accion']) && isset($_GET['fecha_inicio'])
         if (!empty($fecha_fin)) {
             // Reserva periódica: actualizamos todas las fechas entre inicio y fin
             $update_query = ($accion == 'autorizar')
-                ? "UPDATE reservas SET estado = 'confirmado' WHERE lugar = ? AND fecha >= ? AND fecha <= ? AND hora_inicio = ? AND hora_fin = ?"
-                : "UPDATE reservas SET estado = 'cancelada' WHERE lugar = ? AND fecha >= ? AND fecha <= ? AND hora_inicio = ? AND hora_fin = ?";
+                ? "UPDATE reservas SET estado = 'confirmado' WHERE lugar = ? AND fecha_reserva >= ? AND fecha_reserva <= ? AND hora_inicio = ? AND hora_fin = ?"
+                : "UPDATE reservas SET estado = 'cancelada' WHERE lugar = ? AND fecha_reserva >= ? AND fecha_reserva <= ? AND hora_inicio = ? AND hora_fin = ?";
 
             $stmt_update = $conn->prepare($update_query);
             $stmt_update->bind_param("sssss", $lugar, $fecha_inicio, $fecha_fin, $hora_inicio, $hora_fin);
         } else {
             // Reserva normal: solo esa fecha
             $update_query = ($accion == 'autorizar')
-                ? "UPDATE reservas SET estado = 'confirmado' WHERE fecha = ? AND hora_inicio = ? AND hora_fin = ? AND lugar = ?"
-                : "UPDATE reservas SET estado = 'cancelada' WHERE fecha = ? AND hora_inicio = ? AND hora_fin = ? AND lugar = ?";
+                ? "UPDATE reservas SET estado = 'confirmado' WHERE fecha_reserva = ? AND hora_inicio = ? AND hora_fin = ? AND lugar = ?"
+                : "UPDATE reservas SET estado = 'cancelada' WHERE fecha_reserva = ? AND hora_inicio = ? AND hora_fin = ? AND lugar = ?";
 
             $stmt_update = $conn->prepare($update_query);
             $stmt_update->bind_param("ssss", $fecha_inicio, $hora_inicio, $hora_fin, $lugar);
@@ -273,14 +273,14 @@ if (isset($_GET['id']) && isset($_GET['accion']) && isset($_GET['fecha_inicio'])
                                 'hora_inicio' => $reserva['hora_inicio'] ?? '',
                                 'hora_fin' => $reserva['hora_fin'] ?? '',
                                 'observaciones' => $reserva['observaciones'] ?? '',
-                                'fecha_inicio' => $reserva['fecha'] ?? '',
+                                'fecha_inicio' => $reserva['fecha_reserva'] ?? '',
                                 'fecha_fin' => null,
                                 'esp_numero' => $reserva['esp_numero'] ?? ''
                             ];
                         } else {
                             // Actualizamos fecha_fin solo si hay varias fechas
-                            if (!empty($reserva['fecha']) && $reserva['fecha'] > $reservas_agregadas[$grupo_key]['fecha_inicio']) {
-                                $reservas_agregadas[$grupo_key]['fecha_fin'] = $reserva['fecha'];
+                            if (!empty($reserva['fecha_reserva']) && $reserva['fecha_reserva'] > $reservas_agregadas[$grupo_key]['fecha_inicio']) {
+                                $reservas_agregadas[$grupo_key]['fecha_fin'] = $reserva['fecha_reserva'];
                             }
                         }
                     }

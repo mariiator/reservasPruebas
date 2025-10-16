@@ -63,8 +63,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $lugar = $conn->real_escape_string($_POST['lugar']);
     $observaciones = $conn->real_escape_string($_POST['observaciones']);
 
-    $fecha_reserva = date('Y-m-d');
-    $fecha = $conn->real_escape_string($_POST['fecha_inicio']);
+    $fecha_reserva = $conn->real_escape_string($_POST['fecha_inicio']);
+    $fecha = date('Y-m-d');
 
     // Buscar o crear el usuario en la base de datos
     $sqlBuscarUsuario = "SELECT id_usuario FROM usuarios WHERE nombre = ?";
@@ -108,7 +108,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 $id_espacio = $fecha_actual . '_' . $hora_inicio . '_' . $hora_fin . '_' . $lugar;
 
                 if (!in_array($id_espacio, $reservasOcupadasArray)) {
-                    if (insertarReserva($conn, $id_usuario, $id_espacio, $fecha_actual, $hora_inicio, $hora_fin, $fecha_reserva, $lugar, $observaciones)) {
+                    if (insertarReserva($conn, $id_usuario, $id_espacio, $fecha, $hora_inicio, $hora_fin, $fecha_actual, $lugar, $observaciones)) {
                         $contador++;
                     }
                 }
@@ -121,7 +121,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         exit();
 
     } else { //Reserva normal
-        $id_espacio = $fecha . '_' . $hora_inicio . '_' . $hora_fin . '_' . $lugar;
+        $id_espacio = $fecha_reserva . '_' . $hora_inicio . '_' . $hora_fin . '_' . $lugar;
 
         // Verificar si la franja horaria está ocupada
         if (!in_array($id_espacio, $reservasOcupadasArray)) {
